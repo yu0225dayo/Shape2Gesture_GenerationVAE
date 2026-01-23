@@ -3,7 +3,7 @@
 接触部位形状を介した、両手把持姿勢の生成モデル
 
 ## 研究背景
-学部では、「接触部位形状を介した、全体形状と両手把持ジェスチャの相互検索システム」を構築した。
+学部では、「接触部位形状を介した、全体形状と両手把持ジェスチャの相互検索システム」を構築した。<br>
 相互検索システムではDBが不可欠であるため、本プロジェクトではDBなしで直接生成できる生成モデルに拡張する。
 相互検索システム：https://github.com/yu0225dayo/Shape2Gesture_SearchModel
 
@@ -11,21 +11,21 @@
 
 ### モデル構造
 ![Model overview](figs/model.png)
-物体の接触部位形状から手首座標系の手形状を生成するVAEと、手首座標と手の向きを生成するVAEにモデルを分離させて学習するフレームワークを提案する。
+物体の接触部位形状から手首座標系の手形状を生成するVAEと、手首座標と手の向きを生成するVAEにモデルを分離させて学習するフレームワークを提案する。<br>
 単一Decoderで生成すると、手形状が崩壊する問題に直面したため、学習・生成の安定化を図るため分離する。
 
 ### 損失関数(席取りLoss)
 ![Model overview](figs/abst_sekitori.png)
-ボトル形状など対称性のある形状は、把持方向が無数に存在する。あらゆる方向の把持姿勢が生成されることが理想であるため、VAEの潜在空間を拘束する必要がある。
+ボトル形状など対称性のある形状は、把持方向が無数に存在する。あらゆる方向の把持姿勢が生成されることが理想であるため、VAEの潜在空間を拘束する必要がある。<br>
 VAEは確率的分布であることから出力にランダム性が生まれる。その領域を拘束するというLossを提案
 ![Model overview](figs/latentspace.png)
 
 ## 主な特徴
 
 - ✅ **分離されたモデル構造**
-手形状生成VAEと位置・向き生成VAEに分離し学習・生成の安定化
-PointNet依存ではあるが、モデル分離化による編集性
-手形状生成VAEをグリッパや他のハンドに変更可である
+手形状生成VAEと位置・向き生成VAEに分離し学習・生成の安定化<br>
+PointNet依存ではあるが、モデル分離化による編集性<br>
+手形状生成VAEをグリッパや他のハンドに変更可である<br>
 
 - ✅ **損失関数**
 席取りLossを提案し、VAEの潜在空間を拘束
@@ -39,7 +39,7 @@ PointNet依存ではあるが、モデル分離化による編集性
 #### 1️⃣ utils_Pretrained_PointNet/ - パーツ獲得のPointNetの事前学習
 
 **目的**: パーツ分割を行うPointNetの事前学習とScalingNetの事前学習
-PointNetのパーツセグメンテーションのNNを学習
+PointNetのパーツセグメンテーションのNNを学習<br>
 物体に対する手のscaleの予測
 
 #### 3️⃣ utils_Pretrained_Hand/ - 手首座標系の手形状生成VAEの事前学習
@@ -66,16 +66,16 @@ Shape2Gesture_GenerationModel/
 ```
 
 ## 学習フロー
-1. **Phase 1**: train PointNet, ScalingNet
-   - PointNet: 全体形状 → パーツラベルに属する確率(0:非接触, 1:左手, 2:右手)
-   - ScalingNet: 全体形状 → 手の大きさ
+1. **Phase 1 : train PointNet, ScalingNet**
+- PointNet: 全体形状 → パーツラベルに属する確率(0:非接触, 1:左手, 2:右手)
+- ScalingNet: 全体形状 → 手の大きさ
 
-2. **Phase 2**: train HandVAE
-   - HandVAE: 手 → 手
+2. **Phase 2 : train HandVAE**
+- HandVAE: 手 → 手
 
-3. **Phase 3**: train PartsEncoder,  PositionVAE
-   - PartsEncoder: パーツ → 手 を生成するためのEncoder 
-   - PositionVAE: パーツ形状・全体形状 → 物体座標系における手の位置・向き
+3. **Phase 3 : train PartsEncoder,  PositionVAE**
+- PartsEncoder: パーツ → 手 を生成するためのEncoder 
+- PositionVAE: パーツ形状・全体形状 → 物体座標系における手の位置・向き
 
 
 ## データセット詳細
