@@ -176,8 +176,9 @@ python show_g2p_target.py \
     --idx 0\
     --model path/to/save_model \ #学習したモデルのパス
 ```
-[▶ Demo Video (YouTube)] (https://youtu.be/axDwgBzbbtc)
-[▶ Demo Video (YouTube)] (https://youtu.be/EhZxxHoMk1g)
+[▶ Demo Video (YouTube)](https://youtu.be/axDwgBzbbtc)
+
+[▶ Demo Video (YouTube)](https://youtu.be/EhZxxHoMk1g)
 
 
 ## 必要環境
