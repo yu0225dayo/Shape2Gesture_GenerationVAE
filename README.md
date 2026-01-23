@@ -125,7 +125,7 @@ python pretrained_ScalingNet \
     --nepoch 100 \
     --outf path/to/save_model \
 ```
-#### 2️⃣ utils_Pretrained_HandVAE/ - 手形状生成VAEの事前学習
+#### 2️⃣ utils_Pretrained_HandVAE/ - 手形状生成Hand VAEの事前学習
 
 ```bash
 cd utils_Pretrained_Hand
@@ -147,9 +147,9 @@ python test_pretrained_HandVAE_format_xy.py \
     --model path/to/save_model \ #学習したモデルのパス
 ```
 
-#### 2️⃣ 物体座標系へ座標変換VAEの学習
+#### 3️⃣ PartsEncoder・PositionVAEの学習
 ```bash
-cd utils_Hand_Generation
+cd utils_train_PositionVAE
 ```
 ##### PartsEncoder
 ```bash
@@ -162,7 +162,7 @@ python train_PartsEncoder.py \
 ```
 ##### PositionVAE
 ```bash
-python pretrained_HandVAE_format_xy.py \
+python train_positionVAE_w_batchsampler\
     --dataset path/to/dataset \
     --batchSize 16 \
     --nepoch 100 \
@@ -171,11 +171,14 @@ python pretrained_HandVAE_format_xy.py \
 ```
 
 ```bash
-python test_pretrained_HandVAE_format_xy.py \
+python show_g2p_target.py \
     --dataset path/to/dataset \
     --idx 0\
     --model path/to/save_model \ #学習したモデルのパス
 ```
+[▶ Demo Video (YouTube)] (https://youtu.be/axDwgBzbbtc)
+[▶ Demo Video (YouTube)] (https://youtu.be/EhZxxHoMk1g)
+
 
 ## 必要環境
 - Python 3.9

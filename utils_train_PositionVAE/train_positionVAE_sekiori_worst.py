@@ -47,10 +47,9 @@ if __name__=="__main__":
 
     parser.add_argument('--outf', type=str, default='worst30', help='output folder')
     parser.add_argument('--model', type=str, default='', help='model path')
-    parser.add_argument('--dataset', type=str, default="dataset", help="dataset path") # dataset2, dataset 
-    parser.add_argument('--class_choice', type=str, default='sotuken', help="class_choice")
-    parser.add_argument('--feature_transform', action='store_true', help="use feature transform") #pointnetの設宁E
-    parser.add_argument('--select_labels', type=list, default=None, help="what class use of dataset") #["ju", "mu", "bo", "pc", "ba"]
+    parser.add_argument('--dataset', type=str, default="dataset", help="dataset path") 
+    parser.add_argument('--feature_transform', action='store_true', help="use feature transform") #pointnet option
+    parser.add_argument('--select_labels', type=list, default=None, help="what class use of dataset") #["ba", "bo", "ju", "ka", "mu", "pa",  "pc", "po", "va"]
 
     opt = parser.parse_args()
     print(opt)

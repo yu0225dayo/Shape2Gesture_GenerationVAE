@@ -102,9 +102,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='save_model', help='model path')
-    parser.add_argument('--idx', type=int, default=1, help='model index')
+    parser.add_argument('--idx', type=int, default=0, help='model index')
     parser.add_argument('--dataset', type=str, default='dataset', help='dataset path') #dataset, dataset2
-    parser.add_argument('--select_labels', type=list, default=["ka"], help="what class use in dataset") #["ju", "mu", "bo", "pc"]
+    parser.add_argument('--select_labels', type=list, default=None, help="what class use in dataset") #["ba", "bo", "ju", "ka", "mu", "pa",  "pc", "po", "va"]
     opt = parser.parse_args()
     print(opt)
 
