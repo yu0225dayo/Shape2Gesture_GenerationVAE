@@ -59,6 +59,7 @@ output/
 results/
 logs/
 save_log/
+save_model/
 
 # Temporary files
 *.tmp
@@ -68,12 +69,15 @@ save_log/
 *.jpg
 *.jpeg
 *.gif
+*.pcd
+*.ply
 
-# keep figures and demos
+# folers
+# keep figures and gif
 !fig/
 !fig/**
-!demos/
-!demos/**
+!gif/
+!gif/**
 
 # Keep only Python source files
 # Everything else is generated or should be in parent .gitignore

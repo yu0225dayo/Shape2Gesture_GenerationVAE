@@ -24,8 +24,7 @@ from visualization import *
 from model import HandVAE
 
 parser = argparse.ArgumentParser()
-choice="Mug"
-parser.add_argument('--model', type=str, default='save_model/pretrained_VAE_formatxy', help='model path')
+parser.add_argument('--model', type=str, default='save_model/pretrained_HandVAE_formatxy', help='model path')
 parser.add_argument('--idx', type=int, default=150, help='model index')
 parser.add_argument('--dataset', type=str, default='neuralnet_dataset_unity', help='dataset path')
 
@@ -33,10 +32,8 @@ opt = parser.parse_args()
 print(opt)
 
 handvae_l, handvae_r = HandVAE(), HandVAE()
-path_vae_l = os.path.join(opt.model, 'vae_l_best.pth')
-path_vae_r = os.path.join(opt.model, 'vae_r_best.pth')
-state_dict_vae_l = torch.load(path_vae_l, weights_only = True)
-state_dict_vae_r = torch.load(path_vae_r, weights_only = True)
+state_dict_vae_l = torch.load(f"{opt.model}/vae_l_best.pth", weights_only = True)
+state_dict_vae_r = torch.load(f"{opt.model}/vae_r_best.pth", weights_only = True)
 
 handvae_l.load_state_dict(state_dict_vae_l)
 handvae_l.eval()
@@ -98,8 +95,7 @@ ax5.set_zlabel("z")
 def test_hand_dataset():
 
     d = HandDataset_format(
-    root = "hand_vae_data2",
-    class_choice=[opt.class_choice],
+    root = opt.dataset,
     split = 'train',
     data_augmentation = True)
 

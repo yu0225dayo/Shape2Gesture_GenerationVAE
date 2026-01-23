@@ -18,109 +18,127 @@ import shutil
 from torch.utils.tensorboard import SummaryWriter
 
 from model import HandVAE, PartsEncoder_w_TNet, Position_Generater_VAE
-from dataset_format_xy import ShapeNetDataset_format
-from model_pointnet import PointNetDenseCls, feature_transform_regularizer
-from train_positionVAE_sekitori import *
+from dataset import RealWorld_Dataset
+from model_pointnet import PointNetDenseCls, feature_transform_regularizer, ScalingNet
 from visualization import *
 from functions_pointnet_demo import *
+from caclulate_method import *
 matplotlib.use("TkAgg")
 
-def demo(data):
-    print("###########")
+def demo_multi_sampling(data, num_samples=1):
+    """
+    同じサンプルに対して複数回サンプリングを行う
+    
+    Args:
+        data: データセットから取得したサンプル
+        num_samples: サンプリング回数
+    
+    Returns:
+        point_set: 点群
+        pred_choice: パーツセグメンテーション結果
+        hand_target: Ground Truth
+        pred_ges_l_list: 左手の予測リスト (num_samples個)
+        pred_ges_r_list: 右手の予測リスト (num_samples個)
+    """
+    print(f"########### Generating {num_samples} samples ###########")
 
-    point_set, seglabel, hand_target, label, batch_weight, hand_set, hand_scale, hand_format, sita_ans, wrist = data
+    point_set, filename = data
+    # パーツセグメンテーション
+    pl, pr, all_feat, plout, prout = get_patseg_wo_target(pointnet, point_set.view(1, point_set.size()[0], point_set.size()[1]))
+    pts = point_set.view(1, point_set.size()[0], point_set.size()[1])
+    hscale_l, hscale_r = scaleNet(pts.transpose(2,1))[0]
+    #パーツの可視化
+
+    point_set, _ = data
     point = point_set.transpose(1, 0).contiguous()
     point = Variable(point.view(1, point.size()[0], point.size()[1]))
-    pred, _, _, all_feat= pointnet(point)
+    pred, _, _, all_feat = pointnet(point)
     pred_choice = pred.data.max(2)[1].cpu()
 
-    #pred_choice = pred_choice.cpu().data.numpy()
-    #label 1=右手　2 = 左手
-    print("推測  label 1 ,2 ,0:",np.count_nonzero(pred_choice==1),np.count_nonzero(pred_choice==2),np.count_nonzero(pred_choice==0))
-    print("答え  label 1 ,2 ,0:",np.count_nonzero(seglabel==1),np.count_nonzero(seglabel==2),np.count_nonzero(seglabel==0))
+    print("推測  label 1 ,2 ,0:", np.count_nonzero(pred_choice==1), np.count_nonzero(pred_choice==2), np.count_nonzero(pred_choice==0))
+    print("Visualizing segmented parts...")
+    fig = plt.figure(figsize=(7, 7))
+    ax = fig.add_subplot(111, projection="3d")
+    ax.set_xlim(-1.5, 1.5)
+    ax.set_ylim(-1.5, 1.5)
+    ax.set_zlim(-1.5, 1.5)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+    ax.set_axis_off()
 
-    points, target, hand_target, filename, batch_weight, hand_set, hand_scale, hand_format, sita_ans, wrist_target = data
+    drawpts(point_set.numpy(), pred_choice[0].numpy(), ax)
     
-    #pl, pr, all_feat, plout, prout = get_patseg(pointnet, points.view(1, points.size()[0], point.size()[1]), target.view(1, target.size()[0], target.size()[1]))
-    pl, pr, all_feat, plout, prout = get_patseg_target(pointnet, points.view(1, points.size()[0], point.size()[1]), target.view(1, target.size()[0], target.size()[1]))
-    #パーツの特徴ベクトル取得
+    
+    # パーツの特徴ベクトル取得
     pf_l, mu_l, logvar_l = parts_encoder_l(pl, all_feat)
     pf_r, mu_r, logvar_r = parts_encoder_r(pr, all_feat)  
-    #基準の手を生成
+    
+    # 基準の手を生成
     pred_handl = handvae_l.finetune(pf_l)
     pred_handr = handvae_r.finetune(pf_r)
-    #回転行列生成
-    R_l, wrist_l, kld_Rl, zl = position_generater_l(plout, all_feat, N=1)
-    R_r, wrist_r, kld_Rr, zr = position_generater_r(prout, all_feat, N=1)
-    R_l, R_r = z_rotation_matrix(R_l).cpu().detach().cpu(), z_rotation_matrix(R_r).detach().cpu()
-    wrist_format = torch.tensor([0.5, 0.5, 0.5])
-    pred_handl, pred_handr = pred_handl.view(1, -1, 3) - wrist_format , pred_handr.view(1, -1, 3) - wrist_format
-    #print("wrist:", wrist_l, wrist_r)
-    wrist_l, wrist_r = wrist_l.view(1, -1, 3), wrist_r.view(1, -1, 3)
-    pred_ges_l_format = torch.cat([torch.tensor([[[0, 0, 0]]]), pred_handl], dim=1)
-    pred_ges_r_format = torch.cat([torch.tensor([[[0, 0, 0]]]), pred_handr], dim=1)
-    hscale_l, hscale_r = np.split(hand_scale, 2, axis=0)
-    hscale_l, hscale_r = hscale_l, hscale_r
-    pred_ges_l = pred_ges_l_format / hscale_l
-    pred_ges_r = pred_ges_r_format / hscale_r
-
-    pred_ges_l = pred_ges_l.unsqueeze(1) @ R_l.transpose(2,3) + wrist_l.unsqueeze(2) # B * s * 23 * 3
-    pred_ges_r = pred_ges_r.unsqueeze(1) @ R_r.transpose(2,3) + wrist_r.unsqueeze(2) # B * s * 23 * 3
-    pred_ges_l, pred_ges_r = pred_ges_l[0], pred_ges_r[0]
-    #mu, sigma 
-    mul, sigmal = position_generater_l.get_mu_sigma(plout, all_feat)
-    mur, sigmar = position_generater_r.get_mu_sigma(prout, all_feat)
-    print("-----------")
-    print("mul, sigmal", mul.mean(), sigmal.mean())
-    print("mur, sigmar", mur.mean(), sigmar.mean())
-
-    targetl, targetr = np.split(hand_target, 2,  axis=0)
-    if label[:2] != "bo": #bottle以外
-        msel = F.mse_loss(pred_ges_l, targetl.view(1,23,3))
-        mser = F.mse_loss(pred_ges_r, targetr.view(1,23,3))
-
-        print("MSE_L:", msel)
-        print("MSE_R:", mser)
     
-    if label[:2] == "bo": #bottle
-        pred_l = pred_ges_l # 1 * N * 23 * 3
-        pred_r = pred_ges_r # 1 * N * 23 * 3
-        
-        t_l, t_r =  targetl.unsqueeze(0), targetr.unsqueeze(0)
-        target_list_l = rotate_targets_z(t_l.view(1,23,3), N = 12) # 1 * 23 * 3
-        target_list_r = rotate_targets_z(t_r.view(1,23,3), N = 12)
+    # 複数回サンプリング
+    pred_ges_l_list = []
+    pred_ges_r_list = []
 
-        msel = F.mse_loss(pred_l.repeat(1,12,1,1), target_list_l, reduction="none")
-        mser = F.mse_loss(pred_r.repeat(1,12,1,1), target_list_r, reduction="none")
+    wrist_format = torch.tensor([0.5, 0.5, 0.5])
+    pred_handl_base = pred_handl.view(1, -1, 3) - wrist_format
+    pred_handr_base = pred_handr.view(1, -1, 3) - wrist_format
+    
+    for i in range(num_samples):
+        print(f"\n--- Sample {i+1}/{num_samples} ---")
         
-        print("MSE_L:", msel.mean(dim=(2,3)), msel.sum(dim=(2,3))/69)
-        print("MSE_R:", mser.mean(dim=(2,3)), mser.sum(dim=(2,3))/69)
+        # 回転行列生成 (VAEなので毎回異なる結果が得られる)
+        R_l, wrist_l, kld_Rl, zl = position_generater_l(plout, all_feat, N=1)
+        R_r, wrist_r, kld_Rr, zr = position_generater_r(prout, all_feat, N=1)
+        R_l, R_r = z_rotation_matrix(R_l).cpu().detach(), z_rotation_matrix(R_r).detach().cpu()
+        
+        wrist_l, wrist_r = wrist_l.view(1, -1, 3), wrist_r.view(1, -1, 3)
+        pred_ges_l_format = torch.cat([torch.tensor([[[0, 0, 0]]]), pred_handl_base], dim=1)
+        pred_ges_r_format = torch.cat([torch.tensor([[[0, 0, 0]]]), pred_handr_base], dim=1)
+        
+        pred_ges_l = pred_ges_l_format / hscale_l
+        pred_ges_r = pred_ges_r_format / hscale_r
 
-    return point_set, pred_choice, hand_target, pred_ges_l[0].detach().cpu().numpy(), pred_ges_r[0].detach().cpu().numpy(), _, _, _, pred_ges_l_format, pred_ges_r_format
+        pred_ges_l = pred_ges_l.unsqueeze(1) @ R_l.transpose(2, 3) + wrist_l.unsqueeze(2)
+        pred_ges_r = pred_ges_r.unsqueeze(1) @ R_r.transpose(2, 3) + wrist_r.unsqueeze(2)
+        pred_ges_l, pred_ges_r = pred_ges_l[0], pred_ges_r[0]
+        
+        pred_ges_l_list.append(pred_ges_l[0].detach().cpu().numpy())
+        pred_ges_r_list.append(pred_ges_r[0].detach().cpu().numpy())
+        
+    return point_set, pred_choice, _, pred_ges_l_list, pred_ges_r_list
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='save_model', help='model path')
-    parser.add_argument('--idx', type=int, default=1, help='model index')
-    parser.add_argument('--dataset', type=str, default='neuralnet_dataset_unity', help='dataset path') #neuralnet_dataset_unity, dataset2
-    parser.add_argument('--select_labels', type=list, default=["ka"], help="what class use in dataset") #["ju", "mu", "bo", "pc"]
+    parser.add_argument('--idx', type=int, default=4, help='model index')
+    parser.add_argument('--dataset', type=str, default='neuralnet_dataset_unity', help='dataset path')
+    parser.add_argument('--num_samples', type=int, default=3, help='number of samples to generate')
     opt = parser.parse_args()
     print(opt)
 
-    d = ShapeNetDataset_format_select(
+    d = RealWorld_Dataset(
+        split="train",
         root=opt.dataset,
-        data_augmentation=False,
-        select_labels=opt.select_labels
-        )
+    )
+
     data = d[opt.idx]
-    point_set, seglabel, hand_target, label, batch_weight, hand_set, hand_scale, hand_format, sita_ans, wrist = data
+    point_set, filename = data
     
-    #partseg model
+    # partseg model
     pointnet = PointNetDenseCls(k=3, feature_transform=None)
     state_dict_pointnet = torch.load("save_model/pointnet/pointnet_acc_partseg_best.pth", weights_only=True)
     pointnet.load_state_dict(state_dict_pointnet)
     pointnet.eval()
+
+    #scale net
+    scaleNet = ScalingNet()
+    state_dict_scaleNet = torch.load("save_model/ScalingNet/scaleNet_best.pth", weights_only=True)
+    scaleNet.load_state_dict(state_dict_scaleNet)
+    scaleNet.eval()
 
     # parts encoder
     parts_encoder_l, parts_encoder_r = PartsEncoder_w_TNet(), PartsEncoder_w_TNet()
@@ -150,7 +168,7 @@ if __name__ == "__main__":
     position_generater_r.load_state_dict(state_sita_r)
     position_generater_l.eval(), position_generater_r.eval()
 
-    
+    print("=== [n] 次のサンプル / [r] 再サンプリング / [q] 終了 ===")
 
     "hand_target : GT"
 
@@ -170,6 +188,7 @@ if __name__ == "__main__":
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
     ax.set_zlabel("Z")
+    ax.set_axis_off()
 
     plt.tight_layout()
     plt.show(block=False)
@@ -202,12 +221,10 @@ if __name__ == "__main__":
         (
             point_set,
             pred_choice,
-            hand_target,
+            _,
             pred_ges_l,
             pred_ges_r,
-            _, _, _,
-            _, _
-        ) = demo(data)
+        ) = demo_multi_sampling(data, num_samples=1)
 
         # ----------------------------
         # 描画更新（windowは消えない）
@@ -215,19 +232,20 @@ if __name__ == "__main__":
         ax.cla()
 
         ax.set_title("PointCloud + Generated Grasp Pose")
-        ax.set_xlim(-1.5, 1.5)
-        ax.set_ylim(-1.5, 1.5)
-        ax.set_zlim(-1.5, 1.5)
+        ax.set_xlim(-1, 1)
+        ax.set_ylim(-1, 1)
+        ax.set_zlim(-1, 1)
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
+        ax.set_axis_off()
 
         # point cloud
         drawparts(point_set.numpy(), ax=ax, parts="")
 
         # hand pose
-        drawhand(pred_ges_l, ax=ax, color="orange")
-        drawhand(pred_ges_r, ax=ax, color="purple")
+        drawhand(pred_ges_l[0], ax=ax, color="orange")
+        drawhand(pred_ges_r[0], ax=ax, color="purple")
 
         fig.canvas.draw_idle()
         fig.canvas.flush_events()

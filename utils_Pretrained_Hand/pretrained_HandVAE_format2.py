@@ -71,17 +71,17 @@ if __name__ =="__main__":
         '--workers', type=int, help='number of data loading workers', default=0)
     parser.add_argument(
         '--nepoch', type=int, default=1000, help='number of epochs to train for')
-    parser.add_argument('--outf', type=str, default='save_pretrained_VAE_format2_beta01', help='output folder')
+    parser.add_argument('--outf', type=str, default='pretrained_HandVAE_format2', help='output folder')
     parser.add_argument('--model', type=str, default='', help='model path')
     parser.add_argument('--dataset', type=str, default="hand_vae_data2", help="dataset path")
     parser.add_argument('--feature_transform', action='store_true', help="use feature transform")
     parser.add_argument('--beta', type= float , default=0.1,  help="use for beta vae")
     opt = parser.parse_args()
     print(opt)
-    if os.path.exists("Log/"+opt.outf):
-        shutil.rmtree("Log/"+opt.outf)
+    if os.path.exists("Log_tensorboard/"+opt.outf):
+        shutil.rmtree("Log_tensorboard/"+opt.outf)
 
-    Writer = SummaryWriter(log_dir="Log/"+opt.outf)
+    Writer = SummaryWriter(log_dir="Log_tensorboard/"+opt.outf)
 
     opt.manualSeed = random.randint(1, 10000)  # fix seed
     print("Random Seed: ", opt.manualSeed)

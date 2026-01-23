@@ -197,26 +197,29 @@ if __name__ == "__main__":
         num_workers=int(opt.workers),
     )
 
-    pointnet = PointNetDenseCls(k=3, feature_transform=False)
-    state_dict_pointnet = torch.load("save_pretrained_partsseg/pointnet_model_sotuken_acc_partseg_best.pth", weights_only=True)
+        # partseg model
+    pointnet = PointNetDenseCls(k=3, feature_transform=None)
+    state_dict_pointnet = torch.load("save_model/pointnet/pointnet_acc_partseg_best.pth", weights_only=True)
     pointnet.load_state_dict(state_dict_pointnet)
-    pointnet.cuda()
+    pointnet.eval()
 
+    # parts encoder
     parts_encoder_l, parts_encoder_r = PartsEncoder_w_TNet(), PartsEncoder_w_TNet()
-    state_parts_e_l = torch.load("fps_formatxy2/parts_encoder_l_model_sotuken_loss_mse_best.pth", weights_only=True)
-    state_parts_e_r = torch.load("fps_formatxy2/parts_encoder_r_model_sotuken_loss_mse_best.pth", weights_only=True)
+    state_parts_e_l = torch.load("save_model/pretrained_PartsEncoder/parts_encoder_l_best.pth", weights_only=True)
+    state_parts_e_r = torch.load("save_model/pretrained_PartsEncoder/parts_encoder_r_best.pth", weights_only=True)
     parts_encoder_l.load_state_dict(state_parts_e_l)
+    parts_encoder_l.eval()
     parts_encoder_r.load_state_dict(state_parts_e_r)
-    parts_encoder_l.eval().cuda()
-    parts_encoder_r.eval().cuda()
+    parts_encoder_r.eval()
 
+    #train model 
+    "rotation matrix NN"
     position_generater_l, position_generater_r = Position_Generater_VAE(), Position_Generater_VAE()
-    state_sita_l = torch.load("worst30_sampler/position_generater_l/Epoch/29_epoch.pth", weights_only=True)
-    state_sita_r = torch.load("worst30_sampler/position_generater_r/Epoch/29_epoch.pth", weights_only=True)
+    state_sita_l = torch.load("save_model/position_generater_l/Epoch/29_epoch.pth", weights_only=True) 
+    state_sita_r = torch.load("save_model/position_generater_r/Epoch/29_epoch.pth", weights_only=True)
     position_generater_l.load_state_dict(state_sita_l)
     position_generater_r.load_state_dict(state_sita_r)
-    position_generater_l.eval().cuda()
-    position_generater_r.eval().cuda()
+    position_generater_l.eval(), position_generater_r.eval()
 
     print(f"Selected labels: {opt.select_labels}")
     (

@@ -16,14 +16,14 @@ import sys
 import shutil
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn as nn
-from model import VAE, PartsEncoder_w_TNet, Position_Generater_VAE
+from model import HandVAE, PartsEncoder_w_TNet, Position_Generater_VAE
 from caclulate_method import *
 
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
-from utils_Hand_Generation.visualize_method import *
+from visualize_method import *
 matplotlib.use("Agg")
 
 def sekitori(pred, target):
@@ -106,42 +106,34 @@ if __name__=="__main__":
 
     blue = lambda x: '\033[94m' + x + '\033[0m'
 
-    pointnet_classifier = PointNetDenseCls(k=num_classes, feature_transform=opt.feature_transform)
-    state_dict_pointnet = torch.load("save_pretrained_partsseg/pointnet_model_sotuken_acc_partseg_best.pth", weights_only=True)
-    pointnet_classifier.load_state_dict(state_dict_pointnet)
-    pointnet_classifier.eval()
+        # partseg model
+    pointnet = PointNetDenseCls(k=3, feature_transform=None)
+    state_dict_pointnet = torch.load("save_model/pointnet/pointnet_acc_partseg_best.pth", weights_only=True)
+    pointnet.load_state_dict(state_dict_pointnet)
+    pointnet.eval()
+
+    # parts encoder
+    parts_encoder_l, parts_encoder_r = PartsEncoder_w_TNet(), PartsEncoder_w_TNet()
+    state_parts_e_l = torch.load("save_model/pretrained_PartsEncoder/parts_encoder_l_best.pth", weights_only=True)
+    state_parts_e_r = torch.load("save_model/pretrained_PartsEncoder/parts_encoder_r_best.pth", weights_only=True)
+    parts_encoder_l.load_state_dict(state_parts_e_l)
+    parts_encoder_l.eval()
+    parts_encoder_r.load_state_dict(state_parts_e_r)
+    parts_encoder_r.eval()
+
+    #hand VAE
+    handvae_r = HandVAE()
+    handvae_l = HandVAE()
+    state_dict_vae_l = torch.load("save_model/pretrained_HnadVAE_formatxy/vae_l_best.pth", weights_only=True)
+    state_dict_vae_r = torch.load("save_model/pretrained_HnadVAE_formatxy/vae_r_best.pth", weights_only=True)
+    handvae_l.load_state_dict(state_dict_vae_l)
+    handvae_l.eval()
+    handvae_r.load_state_dict(state_dict_vae_r)
+    handvae_r.eval()
+
     #train model 
     "rotation matrix NN"
-    #sita_generater_l, sita_generater_r = QuaterionVAE5(), QuaterionVAE5()
     sita_generater_l, sita_generater_r = Position_Generater_VAE(), Position_Generater_VAE()
-    # state_sita_l = torch.load("test_targetAAA/sita_generater_l_loss_mse_best.pth", weights_only=True) #train922/sita_generater_l/Epoch/49_epoch.pth, train922/sita_generater_l_loss_mse_best.pth
-    # state_sita_r = torch.load("test_targetAAA/sita_generater_r_loss_mse_best.pth", weights_only=True) #train922/sita_generater_r/Epoch/49_epoch.pth, train922/sita_generater_r_loss_mse_best.pth
-    # sita_generater_l.load_state_dict(state_sita_l)
-    # sita_generater_r.load_state_dict(state_sita_r)
-    # sita_generater_l.eval(), sita_generater_r.eval()
-
-    #学習済みvae
-    "initial hand vae"
-
-    parts_encoder_classifier_l, parts_encoder_classifier_r = PartsEncoder_w_TNet(), PartsEncoder_w_TNet()
-    # state_parts_e_l = torch.load("fps_format2_target/parts_encoder_l_model_sotuken_loss_mse_best.pth", weights_only=True)
-    # state_parts_e_r = torch.load("fps_format2_target/parts_encoder_r_model_sotuken_loss_mse_best.pth", weights_only=True)
-    state_parts_e_l = torch.load("fps_formatxy2/parts_encoder_l_model_sotuken_loss_mse_best.pth", weights_only=True)
-    state_parts_e_r = torch.load("fps_formatxy2/parts_encoder_r_model_sotuken_loss_mse_best.pth", weights_only=True)
-
-    parts_encoder_classifier_l.load_state_dict(state_parts_e_l)
-    parts_encoder_classifier_l.eval()
-    parts_encoder_classifier_r.load_state_dict(state_parts_e_r)
-    parts_encoder_classifier_r.eval()
-
-    vae_classifier_r = VAE()
-    vae_classifier_l = VAE()
-    state_dict_vae_l = torch.load("save_model/save_pretrained_VAE_formatxy/vae_l_sotuken_loss_total_best.pth", weights_only=True)
-    state_dict_vae_r = torch.load("save_model/save_pretrained_VAE_formatxy/vae_r_sotuken_loss_total_best.pth", weights_only=True)
-    vae_classifier_l.load_state_dict(state_dict_vae_l)
-    vae_classifier_l.eval()
-    vae_classifier_r.load_state_dict(state_dict_vae_r)
-    vae_classifier_r.eval()
 
     optimizer = optim.Adam([{"params":sita_generater_l.parameters()},
                             {"params":sita_generater_r.parameters()}] ,
@@ -149,11 +141,11 @@ if __name__=="__main__":
     
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
     
-    pointnet_classifier.cuda()
-    vae_classifier_l.cuda()
-    vae_classifier_r.cuda()
-    parts_encoder_classifier_l.cuda()
-    parts_encoder_classifier_r.cuda()
+    pointnet.cuda()
+    handvae_l.cuda()
+    handvae_r.cuda()
+    parts_encoder_l.cuda()
+    parts_encoder_r.cuda()
     sita_generater_l.cuda()
     sita_generater_r.cuda()
 
@@ -195,14 +187,14 @@ if __name__=="__main__":
             batchsize = points.size(0)
 
             "pl, pr, all_feat, plout, prout = get_patseg(pointnet_classifier, points, target)"
-            _, _, all_feat, _, _ = get_patseg(pointnet_classifier, points, target)
-            pl, pr, _, plout, prout = get_patseg_target(pointnet_classifier, points, target)
+            _, _, all_feat, _, _ = get_patseg(pointnet, points, target)
+            pl, pr, _, plout, prout = get_patseg_target(pointnet, points, target)
             #パーツの特徴ベクトル取得
-            pf_l, mu_l, logvar_l = parts_encoder_classifier_l(pl, all_feat)
-            pf_r, mu_r, logvar_r = parts_encoder_classifier_r(pr, all_feat)  
+            pf_l, mu_l, logvar_l = parts_encoder_l(pl, all_feat)
+            pf_r, mu_r, logvar_r = parts_encoder_r(pr, all_feat)  
             #基準の手を生成
-            pred_handl = vae_classifier_l.finetune(pf_l)
-            pred_handr = vae_classifier_r.finetune(pf_r)
+            pred_handl = handvae_l.finetune(pf_l)
+            pred_handr = handvae_r.finetune(pf_r)
             wrist_format = torch.tensor([0.5, 0.5, 0.5]).cuda()
             wrist = torch.tensor([0.0, 0.0, 0.0]).cuda().repeat(batchsize, 1, 1)
             #手首座標を0,0,0に変換
@@ -516,14 +508,14 @@ if __name__=="__main__":
             points, target, hand_target, filename, batch_weight, hand_set, hand_scale, hand_format, sita_ans, wrist_target = data
             batchsize = points.size(0)
             "pl, pr, all_feat, plout, prout = get_patseg(pointnet_classifier, points, target)"
-            _, _, all_feat, _, _ = get_patseg(pointnet_classifier, points, target)
-            pl, pr, _, plout, prout = get_patseg_target(pointnet_classifier, points, target)
+            _, _, all_feat, _, _ = get_patseg(pointnet, points, target)
+            pl, pr, _, plout, prout = get_patseg_target(pointnet, points, target)
             #パーツの特徴ベクトル取得
-            pf_l, mu_l, logvar_l = parts_encoder_classifier_l(pl, all_feat)
-            pf_r, mu_r, logvar_r = parts_encoder_classifier_r(pr, all_feat)  
+            pf_l, mu_l, logvar_l = parts_encoder_l(pl, all_feat)
+            pf_r, mu_r, logvar_r = parts_encoder_r(pr, all_feat)  
             #基準の手を生成
-            pred_handl = vae_classifier_l.finetune(pf_l)
-            pred_handr = vae_classifier_r.finetune(pf_r)
+            pred_handl = handvae_l.finetune(pf_l)
+            pred_handr = handvae_r.finetune(pf_r)
             wrist_format = torch.tensor([0.5, 0.5, 0.5]).cuda()
             wrist = torch.tensor([0.0, 0.0, 0.0]).cuda().repeat(batchsize, 1, 1)
             #手首座標を0,0,0に変換

@@ -39,7 +39,7 @@ if __name__=="__main__":
     parser.add_argument('--nepoch', type=int, default=300, help='number of epochs to train for')
     parser.add_argument('--sampling', type=int, default=5, help='number of sampling to train for')
 
-    parser.add_argument('--outf', type=str, default='pretrained_PartsEncoder', help='output folder')
+    parser.add_argument('--outf', type=str, default='pretrained_PartsEncoder_gt', help='output folder')
     parser.add_argument('--model', type=str, default='', help='model path')
     parser.add_argument('--dataset', type=str, default="neuralnet_dataset_unity", help="dataset path")
     parser.add_argument('--feature_transform', action='store_true', help="use feature transform")
@@ -86,14 +86,14 @@ if __name__=="__main__":
     blue = lambda x: '\033[94m' + x + '\033[0m'
     #pretrained model
     pointnet = PointNetDenseCls(k=3, feature_transform=opt.feature_transform)
-    state_dict_pointnet = torch.load("save_pretrained_partsseg/pointnet_model_sotuken_acc_partseg_best.pth", weights_only=True)
+    state_dict_pointnet = torch.load("save_model/pointnet/pointnet_acc_partseg_best.pth", weights_only=True)
     pointnet.load_state_dict(state_dict_pointnet)
     pointnet.eval()
 
     vae_l = HandVAE()
     vae_r = HandVAE()
-    state_dict_vae_l = torch.load("save_model/save_pretrained_VAE_formatxy/vae_l_best.pth", weights_only=True)
-    state_dict_vae_r = torch.load("save_model/save_pretrained_VAE_formatxy/vae_r_best.pth", weights_only=True)
+    state_dict_vae_l = torch.load("save_model/pretrained_HandVAE_formatxy/vae_l_best.pth", weights_only=True)
+    state_dict_vae_r = torch.load("save_model/pretrained_HandVAE_formatxy/vae_r_best.pth", weights_only=True)
     vae_l.load_state_dict(state_dict_vae_l)
     vae_l.eval()
     vae_r.load_state_dict(state_dict_vae_r)
@@ -249,8 +249,8 @@ if __name__=="__main__":
                 if loss < min_loss_total:
                     print("----------")
                     print("min_loss_totalgを更新")
-                    torch.save(parts_encoder_l.state_dict(), 'save_model/%s/parts_encoder_l_best.pth' % (opt.outf))
-                    torch.save(parts_encoder_r.state_dict(), 'save_model/%s/parts_encoder_r_best.pth' % (opt.outf))
+                    torch.save(parts_encoder_l.state_dict(), 'save_model/%s/parts_encoder_l_best_total.pth' % (opt.outf))
+                    torch.save(parts_encoder_r.state_dict(), 'save_model/%s/parts_encoder_r_best_total.pth' % (opt.outf))
                     min_loss_total = loss
                 #mse_l
                 if  loss_mse_l <= min_total_mse_l:

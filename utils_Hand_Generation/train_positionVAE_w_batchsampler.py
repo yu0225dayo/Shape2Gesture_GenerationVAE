@@ -123,14 +123,14 @@ if __name__=="__main__":
 
     blue = lambda x: '\033[94m' + x + '\033[0m'
     pointnet = PointNetDenseCls(k=3, feature_transform=opt.feature_transform)
-    state_dict_pointnet = torch.load("save_pretrained_partsseg/pointnet_acc_partseg_best.pth", weights_only=True)
+    state_dict_pointnet = torch.load("save_model/pointnet/pointnet_acc_partseg_best.pth", weights_only=True)
     pointnet.load_state_dict(state_dict_pointnet)
     pointnet.eval()
 
     #学習済みvae
     parts_encoder_l, parts_encoder_r = PartsEncoder_w_TNet(), PartsEncoder_w_TNet()
-    state_parts_e_l = torch.load("save_model/fps_formatxy2/parts_encoder_l_best.pth", weights_only=True)
-    state_parts_e_r = torch.load("save_model/fps_formatxy2/parts_encoder_r_model_best.pth", weights_only=True)
+    state_parts_e_l = torch.load("save_model/pretrained_PartsEncoder_gt/parts_encoder_l_best_total.pth", weights_only=True)
+    state_parts_e_r = torch.load("save_model/pretrained_PartsEncoder_gt/parts_encoder_r_best_total.pth", weights_only=True)
     parts_encoder_l.load_state_dict(state_parts_e_l)
     parts_encoder_l.eval()
     parts_encoder_r.load_state_dict(state_parts_e_r)
@@ -138,8 +138,8 @@ if __name__=="__main__":
 
     handvae_r = HandVAE()
     handvae_l = HandVAE()
-    state_dict_vae_l = torch.load("save_model/save_pretrained_VAE_formatxy/vae_l_best.pth", weights_only=True)
-    state_dict_vae_r = torch.load("save_model/save_pretrained_VAE_formatxy/vae_r_best.pth", weights_only=True)
+    state_dict_vae_l = torch.load("save_model/pretrained_HandVAE_formatxy/vae_l_best.pth", weights_only=True)
+    state_dict_vae_r = torch.load("save_model/pretrained_HandVAE_formatxy/vae_r_best.pth", weights_only=True)
     handvae_l.load_state_dict(state_dict_vae_l)
     handvae_l.eval()
     handvae_r.load_state_dict(state_dict_vae_r)

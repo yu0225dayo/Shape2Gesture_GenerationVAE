@@ -26,25 +26,22 @@ from model import HandVAE
 
 
 parser = argparse.ArgumentParser()
-choice="Mug"
-parser.add_argument('--model', type=str, default='C:/Users/yokada/Desktop/new/pointnet.pytorch/segqq/seg_model_'+choice+'_loss.pth', help='model path')
+parser.add_argument('--model', type=str, default='save_model/pretrained_HandVAE_format2', help='model path')
 parser.add_argument('--idx', type=int, default=450, help='model index')
-parser.add_argument('--dataset', type=str, default='neuralnet_dataset_unity', help='dataset path')
-parser.add_argument('--class_choice', type=str, default=choice, help='class choice')
+parser.add_argument('--dataset', type=str, default='neuralnet_dataset_unity', help='dataset path') # hand_vae_data2, neuralnet_dataset_unity
 
 opt = parser.parse_args()
 print(opt)
 
 d = HandDataset_format(
-    root = "hand_vae_data2",
-    class_choice=[opt.class_choice],
+    root = opt.dataset,
     split = 'train',
     data_augmentation = True)
 
 handvae_l, handvae_r = HandVAE(), HandVAE()
 
-state_dict_handvae_l = torch.load("save_model/save_pretrained_VAE_format2_beta01/vae_l_sotuken_loss_total_best.pth", weights_only = True)
-state_dict_handvae_r = torch.load("save_model/save_pretrained_VAE_format2_beta01/vae_r_sotuken_loss_total_best.pth", weights_only = True)
+state_dict_handvae_l = torch.load(f"{opt.model}/vae_l_best.pth", weights_only = True)
+state_dict_handvae_r = torch.load(f"{opt.model}/vae_r_best.pth", weights_only = True)
 
 handvae_l.load_state_dict(state_dict_handvae_l)
 handvae_l.eval()

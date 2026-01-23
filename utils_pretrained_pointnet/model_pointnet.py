@@ -176,9 +176,9 @@ class PointNetDenseCls(nn.Module):
         return x, trans, trans_feat, all_feat
 
 # 物体に対する手のスケーリング予測NN
-class PointNet_scalling(nn.Module):
+class ScalingNet(nn.Module):
     def __init__(self, feature_transform=False):
-        super(PointNet_scalling, self).__init__()
+        super(ScalingNet, self).__init__()
         self.feature_transform = feature_transform
         self.feat = PointNetfeat(global_feat=True, feature_transform=feature_transform)
         self.fc1 = nn.Linear(1024, 512)
@@ -194,7 +194,7 @@ class PointNet_scalling(nn.Module):
         x = F.relu(self.bn1(self.fc1(x)))
         x = F.relu(self.bn2(self.dropout(self.fc2(x))))
         x = self.fc3(x)
-        return F.sigmoid(x, dim=1) 
+        return F.sigmoid(x) 
 
 
 def feature_transform_regularizer(trans):
