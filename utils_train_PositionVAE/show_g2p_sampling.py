@@ -133,9 +133,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='save_model', help='model path')
-    parser.add_argument('--idx', type=int, default=6, help='model index')
-    parser.add_argument('--dataset', type=str, default='neuralnet_dataset_unity', help='dataset path')
-    parser.add_argument('--select_labels', type=list, default=["ka"], help="what class use in dataset")
+    parser.add_argument('--idx', type=int, default=0, help='model index')
+    parser.add_argument('--dataset', type=str, default='dataset', help='dataset path')
+    parser.add_argument('--select_labels', type=list, default=None, help="what class use in dataset")
     parser.add_argument('--num_samples', type=int, default=1, help='number of samples to generate')
     opt = parser.parse_args()
     print(opt)

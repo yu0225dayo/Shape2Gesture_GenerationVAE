@@ -25,7 +25,7 @@ from sklearn.decomposition import PCA
 from dataset_format_xy import ShapeNetDataset_format
 from model import HandVAE, PartsEncoder_w_TNet
 from model_pointnet import *
-from utils_Hand_Generation.visualize_method import *
+from visualize_method import *
 from caclulate_method import *
 
 if __name__=="__main__":
@@ -39,7 +39,7 @@ if __name__=="__main__":
     
     parser.add_argument('--outf', type=str, default='pretrained_PartsEncoder', help='output folder')
     parser.add_argument('--model', type=str, default='', help='model path')
-    parser.add_argument('--dataset', type=str, default="neuralnet_dataset_unity", help="dataset path")
+    parser.add_argument('--dataset', type=str, default="dataset", help="dataset path")
     parser.add_argument('--feature_transform', action='store_true', help="use feature transform")
     opt = parser.parse_args()
     print(opt)

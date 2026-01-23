@@ -17,7 +17,8 @@ import numpy as np
 import sys
 import shutil
 from torch.utils.tensorboard import SummaryWriter
-import numpy as np
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 
@@ -26,17 +27,17 @@ from model import HandVAE, PartsEncoder_w_TNet, Position_Generater_VAE
 from model_pointnet import *
 from visualize_method_w_sampler import *
 from functions_loss import augmentation_target, sekitori_loss_worst_percent
-from functions_pointnet import get_patseg, get_patseg_target, z_rotation_matrix
+from functions_pointnet import get_patseg, get_patseg_target
 from funtion_else import z_rotation_matrix
-matplotlib.use("Agg")
+
 """
 席取りLoss(提案手法):
 VAEの潜在空間を拘束し、1対多の学習を行うためのLoss関数
 席取りLossでLossを確定させ、下位30%を用いる
 """
-def sekitori_worst(pred, target, N=12):
-    target_list = augmentation_target(target, N = 12) # B * N * 23 * 3
-    loss_mse, target_idx, loss_mean, idx_min_loss, all_indices, sorted_flat = sekitori_loss_worst_percent(pred, target_list, worst_percent=30)
+def sekitori_worst(pred, target, N=12, worst_percent=30):
+    target_list = augmentation_target(target, N) # B * N * 23 * 3
+    loss_mse, target_idx, loss_mean, idx_min_loss, all_indices, sorted_flat = sekitori_loss_worst_percent(pred, target_list, worst_percent)
     return loss_mse, target_idx, loss_mean, idx_min_loss, all_indices, sorted_flat[0]
 
 if __name__=="__main__":
@@ -51,10 +52,11 @@ if __name__=="__main__":
     parser.add_argument('--nepoch', type=int, default=100, help='number of epochs to train for')
     parser.add_argument('--sampling', type=int, default=120, help='number of sampling to generate hand from VAE')
     parser.add_argument('--target_num', type=int, default=12, help='number of target to augment for sekitori loss')
+    parser.add_argument('--worst_percent', type=int, default=30, help='percent of Loss gradient to use of sekitori loss')
 
     parser.add_argument('--outf', type=str, default='worst30_sampler', help='output folder')
     parser.add_argument('--model', type=str, default='', help='model path')
-    parser.add_argument('--dataset', type=str, default="neuralnet_dataset_unity", help="dataset path") # dataset2, neuralnet_dataset_unity dataset_3class
+    parser.add_argument('--dataset', type=str, default="dataset", help="dataset path") # dataset2, dataset dataset_3class
     parser.add_argument('--class_choice', type=str, default='sotuken', help="class_choice")
     parser.add_argument('--feature_transform', action='store_true', help="use feature transform") #pointnetの設宁E
     parser.add_argument('--select_labels', type=list, default=None, help="what class use of dataset") #["ju", "mu", "bo", "pc", "ba"]
@@ -174,6 +176,7 @@ if __name__=="__main__":
     min_total_loss_grab_l, min_total_loss_grab_r = 100, 100
 
     indices_dict = {"ba":0, "bo":1, "ju":2, "ka":3, "mu":4, "pa":5,  "pc":6, "po":7, "va":8}
+    worst_num = int(opt.target_num * opt.worst_percent / 100) #席取りLossで用いる数
 
     for epoch in range(opt.nepoch):
         train_sampler.set_epoch(epoch)
@@ -254,8 +257,8 @@ if __name__=="__main__":
                 #ボトルクラスのみ席取りLossでVAEの潜在空間を多様化するように高速(提案手法)
                 if "bottle" in filename[b]:
                     #sekitori ボトルのみ lossmse は1サンプルあたり平均mse
-                    loss_mse_l, target_idx_l, loss_mean_l, idx_l_min_loss, all_indices_l, worst_histgram_l = sekitori_worst(pred_l, t_l) 
-                    loss_mse_r, target_idx_r, loss_mean_r, idx_r_min_loss, all_indices_r, worst_histgram_r = sekitori_worst(pred_r, t_r)
+                    loss_mse_l, target_idx_l, loss_mean_l, idx_l_min_loss, all_indices_l, worst_histgram_l = sekitori_worst(pred_l, t_l, N=opt.target_num, worst_percent=opt.worst_percent) 
+                    loss_mse_r, target_idx_r, loss_mean_r, idx_r_min_loss, all_indices_r, worst_histgram_r = sekitori_worst(pred_r, t_r, N=opt.target_num, worst_percent=opt.worst_percent)
                     loss_mse_l_bottle += loss_mse_l  
                     loss_mse_r_bottle += loss_mse_r  
 
@@ -280,8 +283,8 @@ if __name__=="__main__":
                         print("save figure")
                         #used gradient histogram
                         wh_l, wh_r = worst_histgram_l, worst_histgram_r
-                        plot_sorted_loss_histogram(worst_histgram_l, top_k=36, prefix="zl", modelname=opt.outf, sample_id="0", epoch=epoch, count=flag_b1)
-                        plot_sorted_loss_histogram(worst_histgram_r, top_k=36, prefix="zr", modelname=opt.outf, sample_id="0", epoch=epoch, count=flag_b1)
+                        plot_sorted_loss_histogram(worst_histgram_l, top_k=worst_num, prefix="zl", modelname=opt.outf, sample_id="0", epoch=epoch, count=flag_b1)
+                        plot_sorted_loss_histogram(worst_histgram_r, top_k=worst_num, prefix="zr", modelname=opt.outf, sample_id="0", epoch=epoch, count=flag_b1)
                         flag_b1 += 1
 
                     # 特定のサンプルのLossを監視 
@@ -299,8 +302,8 @@ if __name__=="__main__":
                         print("save figure")
                         #used gradient histogram
                         wh_l, wh_r = worst_histgram_l, worst_histgram_r
-                        plot_sorted_loss_histogram(worst_histgram_l, top_k=36, prefix="", modelname=opt.outf, sample_id="", epoch=epoch, count=flag_b2)
-                        plot_sorted_loss_histogram(worst_histgram_r, top_k=36, prefix="", modelname=opt.outf, sample_id="", epoch=epoch, count=flag_b2)
+                        plot_sorted_loss_histogram(worst_histgram_l, top_k=worst_num, prefix="", modelname=opt.outf, sample_id="", epoch=epoch, count=flag_b2)
+                        plot_sorted_loss_histogram(worst_histgram_r, top_k=worst_num, prefix="", modelname=opt.outf, sample_id="", epoch=epoch, count=flag_b2)
                         flag_b2 += 1
                         
                 else: #その他クラスは通常のMSE Loss 
@@ -366,13 +369,11 @@ if __name__=="__main__":
             if loss_mse_l_b < min_total_mse_l:
                 print("min_loss_mse_l更新")
                 torch.save(position_generater_l.state_dict(), '%s/position_generater_l_loss_mse_best.pth' % (opt.outf))
-                #torch.save(wrist_generater_l.state_dict(), '%s/wrist_generater_l_%s_loss_total_best.pth' % (opt.outf, opt.class_choice))
                 min_total_mse_l = loss_mse_l_b
             
             if loss_mse_r_b < min_total_mse_r:
                 print("min_loss_mse_r更新")
                 torch.save(position_generater_r.state_dict(), '%s/position_generater_r_loss_mse_best.pth' % (opt.outf))
-                #torch.save(wrist_generater_r.state_dict(), '%s/wrist_generater_r_%s_loss_total_best.pth' % (opt.outf, opt.class_choice))
                 min_total_mse_r = loss_mse_r_b
     
         #evalで検証する

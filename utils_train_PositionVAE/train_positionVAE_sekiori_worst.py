@@ -3,62 +3,60 @@ import argparse
 import os
 import random
 import torch
-
 import torch.nn.parallel
 import torch.optim as optim
 import torch.utils.data
-from dataset_format_xy import ShapeNetDataset_format_select
-from model_pointnet import *
+import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
 import sys
 import shutil
 from torch.utils.tensorboard import SummaryWriter
-import torch.nn as nn
-from model import HandVAE, PartsEncoder_w_TNet, Position_Generater_VAE
-from caclulate_method import *
-
-import os
-import numpy as np
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
-from utils_Hand_Generation.visualize_method import *
-matplotlib.use("Agg")
 
-# def sekitori(pred, target):
-#     target_list = rotate_targets_z(target, N = 12) # B * N * 23 * 3
-#     loss_mse, target_idx, loss_mean, idx_min_loss, all_indices = sekitori_loss_sum(pred, target_list)
-#     return loss_mse, target_idx, loss_mean, idx_min_loss, all_indices
+from dataset_format_xy import ShapeNetDataset_format_select
+from model import HandVAE, PartsEncoder_w_TNet, Position_Generater_VAE
+from model_pointnet import *
+from visualize_method import *
+from functions_loss import augmentation_target, sekitori_loss_worst
+from functions_pointnet import get_patseg, get_patseg_target
+from funtion_else import z_rotation_matrix
 
-def sekitori_worst(pred, target):
-    target_list = rotate_targets_z(target, N = 12) # B * N * 23 * 3
-    loss_mse, target_idx, loss_mean, idx_min_loss, all_indices, sorted_flat = sekitori_loss_worst2(pred, target_list, worst_percent=30)
+
+def sekitori_worst(pred, target, N=12, worst_percent=30):
+    target_list = augmentation_target(target, N) # B * N * 23 * 3
+    loss_mse, target_idx, loss_mean, idx_min_loss, all_indices, sorted_flat = sekitori_loss_worst(pred, target_list, worst_percent)
     
     return loss_mse, target_idx, loss_mean, idx_min_loss, all_indices, sorted_flat[0]
 
     
 if __name__=="__main__":
-
+    
     parser = argparse.ArgumentParser()
     parser.add_argument('--manualSeed', type=int, default=42, help='manual seed')
     parser.add_argument('--batchSize', type=int, default=16, help='input batch size')
-    parser.add_argument('--workers', type=int, default=0, help='number of data loading workers',)
+    parser.add_argument('--workers', type=int, default=0, help='number of data loading workers')
     parser.add_argument('--nepoch', type=int, default=100, help='number of epochs to train for')
     parser.add_argument('--sampling', type=int, default=120, help='number of sampling to generate hand from VAE')
-    parser.add_argument('--topK', type=int, default=10, help='persent of topK to use backward')
+    parser.add_argument('--target_num', type=int, default=12, help='number of target to augment for sekitori loss')
+    parser.add_argument('--worst_percent', type=int, default=30, help='percent of Loss gradient to use of sekitori loss')
 
-    parser.add_argument('--outf', type=str, default='worst30_bjmpp', help='output folder')
+    parser.add_argument('--outf', type=str, default='worst30', help='output folder')
     parser.add_argument('--model', type=str, default='', help='model path')
-    parser.add_argument('--dataset', type=str, default="neuralnet_dataset_unity", help="dataset path") # dataset2, neuralnet_dataset_unity dataset_3class
+    parser.add_argument('--dataset', type=str, default="dataset", help="dataset path") # dataset2, dataset 
     parser.add_argument('--class_choice', type=str, default='sotuken', help="class_choice")
-    parser.add_argument('--feature_transform', action='store_true', help="use feature transform") #pointnetの設定
-    parser.add_argument('--select_labels', type=list, default=None, help="what class use of dataset") # defalt=["ba", "bo", "ju", "ka", "mu", "pa", "pc", "po", "va"]
+    parser.add_argument('--feature_transform', action='store_true', help="use feature transform") #pointnetの設宁E
+    parser.add_argument('--select_labels', type=list, default=None, help="what class use of dataset") #["ju", "mu", "bo", "pc", "ba"]
 
     opt = parser.parse_args()
     print(opt)
 
-    opt.manualSeed = random.randint(1, 10000)  # fix seed
+    if opt.manualSeed is None:
+        opt.manualSeed = random.randint(1, 10000)  # fix seed
     print("Random Seed: ", opt.manualSeed)
     random.seed(opt.manualSeed)
     torch.manual_seed(opt.manualSeed)
@@ -92,6 +90,7 @@ if __name__=="__main__":
         shuffle=True,
         num_workers=int(opt.workers))
     
+    #学習ではget関数ごとに回転させるため、augmentation(特定の方向に統一されている形状)なしで潜在空間を可視化し評価
     debug_dataset  = ShapeNetDataset_format_select(
         root=opt.dataset,
         data_augmentation=False,
@@ -104,47 +103,38 @@ if __name__=="__main__":
         shuffle=True,
         num_workers=int(opt.workers))
 
-    num_classes = dataset.num_seg_classes
-    print('classes', num_classes)
-
     if not os.path.exists(opt.outf):
         os.mkdir(opt.outf)
 
     blue = lambda x: '\033[94m' + x + '\033[0m'
-
-    # partseg model
-    pointnet = PointNetDenseCls(k=3, feature_transform=None)
+    pointnet = PointNetDenseCls(k=3, feature_transform=opt.feature_transform)
     state_dict_pointnet = torch.load("save_model/pointnet/pointnet_acc_partseg_best.pth", weights_only=True)
     pointnet.load_state_dict(state_dict_pointnet)
     pointnet.eval()
 
-    # parts encoder
+    #学習済みvae
     parts_encoder_l, parts_encoder_r = PartsEncoder_w_TNet(), PartsEncoder_w_TNet()
-    state_parts_e_l = torch.load("save_model/pretrained_PartsEncoder/parts_encoder_l_best.pth", weights_only=True)
-    state_parts_e_r = torch.load("save_model/pretrained_PartsEncoder/parts_encoder_r_best.pth", weights_only=True)
+    state_parts_e_l = torch.load("save_model/pretrained_PartsEncoder_gt/parts_encoder_l_best_total.pth", weights_only=True)
+    state_parts_e_r = torch.load("save_model/pretrained_PartsEncoder_gt/parts_encoder_r_best_total.pth", weights_only=True)
     parts_encoder_l.load_state_dict(state_parts_e_l)
     parts_encoder_l.eval()
     parts_encoder_r.load_state_dict(state_parts_e_r)
     parts_encoder_r.eval()
 
-    #hand VAE
     handvae_r = HandVAE()
     handvae_l = HandVAE()
-    state_dict_vae_l = torch.load("save_model/pretrained_HnadVAE_formatxy/vae_l_best.pth", weights_only=True)
-    state_dict_vae_r = torch.load("save_model/pretrained_HnadVAE_formatxy/vae_r_best.pth", weights_only=True)
+    state_dict_vae_l = torch.load("save_model/pretrained_HandVAE_formatxy/vae_l_best.pth", weights_only=True)
+    state_dict_vae_r = torch.load("save_model/pretrained_HandVAE_formatxy/vae_r_best.pth", weights_only=True)
     handvae_l.load_state_dict(state_dict_vae_l)
     handvae_l.eval()
     handvae_r.load_state_dict(state_dict_vae_r)
     handvae_r.eval()
 
-
-
     #train model 
-    "rotation matrix NN"
-    sita_generater_l, sita_generater_r = Position_Generater_VAE(), Position_Generater_VAE()
+    position_generater_l, position_generater_r = Position_Generater_VAE(), Position_Generater_VAE()
 
-    optimizer = optim.Adam([{"params":sita_generater_l.parameters()},
-                            {"params":sita_generater_r.parameters()}] ,
+    optimizer = optim.Adam([{"params":position_generater_l.parameters()},
+                            {"params":position_generater_r.parameters()}] ,
                             lr=0.0001, betas=(0.9, 0.999))
     
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
@@ -154,34 +144,31 @@ if __name__=="__main__":
     handvae_r.cuda()
     parts_encoder_l.cuda()
     parts_encoder_r.cuda()
-    sita_generater_l.cuda()
-    sita_generater_r.cuda()
+    position_generater_l.cuda()
+    position_generater_r.cuda()
 
-    num_batch = len(dataset) / opt.batchSize
-    best_partseg_acc=0
+    num_batch = len(dataloader)
+    num_sample_per_seat = opt.sampling // opt.target_num #1教師あたりのサンプル数
     
     min_loss_partseg=3
     min_loss_total=100
     min_loss_mse = 1
     min_total_mse_l = 100
     min_total_mse_r = 100
-
     min_total_mse = 100
     min_total_loss_grab_l, min_total_loss_grab_r = 100, 100
 
-    topK = int(opt.sampling * opt.topK *0.01)
-
     indices_dict = {"ba":0, "bo":1, "ju":2, "ka":3, "mu":4, "pa":5,  "pc":6, "po":7, "va":8}
+    worst_num = int(opt.target_num * opt.worst_percent / 100) #席取りLossで用いる数
 
     for epoch in range(opt.nepoch):
         #scheduler.step()
         all_sample_zl, all_sample_zr = [], [] # 各サンプルの潜在変数を保存
-        all_indices_zl, all_indices_zr = [], [] # 各サンプルの潜在変数のindicesを保存
+        all_indices_zl, all_indices_zr = [], [] # 各サンプルのindicesを保存
+        flag_b1, flag_b2 = 0, 0 # bottle_0001, bottle_0002のPCA可視化フラグ
         for i, data in enumerate(dataloader, 0):
-
             optimizer.zero_grad()
-            #train mode
-            sita_generater_l, sita_generater_r = sita_generater_l.train(),  sita_generater_r.train() 
+            
             #init
             loss_mse_l_b = 0
             loss_mse_r_b = 0
@@ -194,82 +181,71 @@ if __name__=="__main__":
             points, target, hand_target, filename, batch_weight, hand_set, hand_scale, hand_format, sita_ans, wrist_target = data
             batchsize = points.size(0)
 
-            #_, _,_, _, _ = get_patseg(pointnet, points, target)
-            pl, pr, all_feat, plout, prout = get_patseg_target(pointnet, points, target)
-            #パーツの特徴ベクトル取得
+            "pl, pr, all_feat, plout, prout = get_patseg(pointnet, points, target)"
+            #pl, pr, all_feat, _, _ = get_patseg(pointnet, points, target)
+            pl, pe, all_feat, plout, prout = get_patseg_target(pointnet, points, target)
+            #手形状生成プロセス
             pf_l, mu_l, logvar_l = parts_encoder_l(pl, all_feat)
             pf_r, mu_r, logvar_r = parts_encoder_r(pr, all_feat)  
-            #基準の手を生成
             pred_handl = handvae_l.finetune(pf_l)
             pred_handr = handvae_r.finetune(pf_r)
+            #手首座標を0,0,0に変換
             wrist_format = torch.tensor([0.5, 0.5, 0.5]).cuda()
             wrist = torch.tensor([0.0, 0.0, 0.0]).cuda().repeat(batchsize, 1, 1)
-            #手首座標を0,0,0に変換
             pred_handl, pred_handr = pred_handl.view(batchsize, -1, 3) - wrist_format , pred_handr.view(batchsize, -1, 3) - wrist_format
-
             pred_ges_l, pred_ges_r = torch.cat([wrist, pred_handl], dim=1), torch.cat([wrist, pred_handr], dim=1)
             pred_ges_l_list = torch.tensor([]).cuda() # sampling * 23 * 3
             pred_ges_r_list = torch.tensor([]).cuda()
-            #教師手首
+            #教師の手形状(物体座標系)
             wrist_l_t, wrist_r_t = np.split(wrist_target, 2, axis=1)
             wrist_l_t, wrist_r_t =  wrist_l_t.view(-1, 3).cuda(), wrist_r_t.view(-1, 3).cuda()
             target_hand_l, target_hand_r = np.split(hand_target, 2, axis=1)
             target_hand_l, target_hand_r = target_hand_l.cuda(), target_hand_r.cuda()
-            
-            #同じ入力でN回生成する。
-            all_zl, all_zr  = [], [] 
+            #物体のスケール1に対して手の大きさをスケーリング(教師を用いて)→予測機に変更予定
             hscale_l, hscale_r = np.split(hand_scale, 2, axis=1)
             hscale_l, hscale_r = hscale_l.cuda(), hscale_r.cuda()
-
+            pred_ges_l, pred_ges_r = pred_ges_l / hscale_l, pred_ges_r / hscale_r
             #wrist NN (train) 回転行列と手首座標生成
-            pred_ges_l_list, pred_ges_r_list = torch.tensor([]), torch.tensor([])
-
-            R_l, wrist_l, kld_Rl, zl = sita_generater_l(plout, all_feat, N=opt.sampling)
-            R_r, wrist_r, kld_Rr, zr = sita_generater_r(prout, all_feat, N=opt.sampling)
-            
-            kld_l = kld_Rl
-            kld_r = kld_Rr
-
-            R_l, R_r = z_rotation_matrix(R_l), z_rotation_matrix(R_r) #[2, 10, 3, 3]
+            #train mode
+            position_generater_l, position_generater_r = position_generater_l.train(),  position_generater_r.train() 
+            R_l, wrist_l, kld_l, zl = position_generater_l(plout, all_feat, N=opt.sampling)
+            R_r, wrist_r, kld_r, zr = position_generater_r(prout, all_feat, N=opt.sampling)
+            R_l, R_r = z_rotation_matrix(R_l), z_rotation_matrix(R_r) #sita → R
+            #潜在空間zを格納
+            all_zl, all_zr  = [], [] 
             all_zl.append(zl)
             all_zr.append(zr)  
-            pred_ges_l, pred_ges_r = pred_ges_l / hscale_l, pred_ges_r / hscale_r
-            
+            #生成手形状を座標変換
             pred_ges_l_list = pred_ges_l.unsqueeze(1) @ R_l.transpose(2,3) + wrist_l.unsqueeze(2) # B * s * 23 * 3
             pred_ges_r_list = pred_ges_r.unsqueeze(1) @ R_r.transpose(2,3) + wrist_r.unsqueeze(2) # B * s * 23 * 3
-            
+            #各教師の席毎のLossを監視するためにretain_grad()→席取りLossの有効性を検証
             pred_ges_l_list.retain_grad()
             pred_ges_r_list.retain_grad()
 
             #すべてのサンプルのPCAのために配列に格納
             all_sample_zl.append(zl[:,0,:].reshape(batchsize, -1)) 
             all_sample_zr.append(zr[:,0,:].reshape(batchsize, -1))
-
+            #indices格納
             for b in range(batchsize):
                 indices = indices_dict[filename[b][:2]]
                 all_indices_zl.append(indices)
                 all_indices_zr.append(indices)
 
-            #losses_worst, worst_idx, loss_mean_target, indices_min_loss, all_indices
-            "losses_worst:勾配計算で使うLoss, worst_idx:どの教師idxがその最大値をとっているのか？, "
-            "loss_mean_target:各教師のLossの平均, indices_min_loss:そもそもどの教師と一番近いか, "
-            "all_indices:教師ごとのサンプルidx"
-            #Lossの計算
+            #Lossの計算(サンプルごとに)
             for b in range(batchsize):
                 pred_l = pred_ges_l_list[b].unsqueeze(0) # 1 * N * 23 * 3
                 pred_r = pred_ges_r_list[b].unsqueeze(0) # 1 * N * 23 * 3
                 t_l, t_r =  target_hand_l[b].unsqueeze(0), target_hand_r[b].unsqueeze(0) # 1 * 23 * 3
-                
+                #ボトルクラスのみ席取りLossでVAEの潜在空間を多様化するように高速(提案手法)
                 if "bottle" in filename[b]:
-                    #sekitori ボトルのみ lossmse は1サンプルあたりの平均mse
-                    loss_mse_l, target_idx_l, loss_mean_l, idx_l_min_loss, all_indices_l, worst_histgram_l = sekitori_worst(pred_l, t_l) 
-                    loss_mse_r, target_idx_r, loss_mean_r, idx_r_min_loss, all_indices_r, worst_histgram_r = sekitori_worst(pred_r, t_r)
-
+                    #sekitori ボトルのみ lossmse は1サンプルあたり平均mse
+                    loss_mse_l, target_idx_l, loss_mean_l, idx_l_min_loss, all_indices_l, worst_histgram_l = sekitori_worst(pred_l, t_l, N=opt.target_num, worst_percent=opt.worst_percent) 
+                    loss_mse_r, target_idx_r, loss_mean_r, idx_r_min_loss, all_indices_r, worst_histgram_r = sekitori_worst(pred_r, t_r, N=opt.target_num, worst_percent=opt.worst_percent)
                     loss_mse_l_bottle += loss_mse_l  
                     loss_mse_r_bottle += loss_mse_r  
 
                     #pca plot
-                    # 特定のサンプルの遷移を監視
+                    # 特定のサンプルのLossを監視
                     if "bottle_0001" == filename[b]:
                         idx = filename.index("bottle_0001")
                         zl1, zr1 = zl[idx], zr[idx]
@@ -281,19 +257,19 @@ if __name__=="__main__":
                         b1_l, b1_r = all_indices_l[0], all_indices_r[0]
 
                         #PCA
-                        visualize_pca_dual_mean(zl1, idx_l, minidx_l, prefix="zl", modelname=opt.outf, sample_id="0", assigned_indices=all_loss_l, epoch=epoch)
-                        visualize_pca_dual_mean(zr1, idx_r, minidx_r, prefix="zr", modelname=opt.outf, sample_id="0", assigned_indices=all_loss_r, epoch=epoch)
+                        visualize_pca_dual_mean(zl1, idx_l, minidx_l, prefix="zl", modelname=opt.outf, sample_id="0", assigned_indices=all_loss_l, epoch=epoch, count=flag_b1)
+                        visualize_pca_dual_mean(zr1, idx_r, minidx_r, prefix="zr", modelname=opt.outf, sample_id="0", assigned_indices=all_loss_r, epoch=epoch, count=flag_b1)
                         #histgram
-                        plot_loss_histogram(mean_l, idx_l, prefix="zl", modelname=opt.outf, sample_id="0", epoch=epoch)
-                        plot_loss_histogram(mean_r, idx_r, prefix="zr", modelname=opt.outf, sample_id="0", epoch=epoch)
+                        plot_loss_histogram(mean_l, idx_l, prefix="zl", modelname=opt.outf, sample_id="0", epoch=epoch, count=flag_b1)
+                        plot_loss_histogram(mean_r, idx_r, prefix="zr", modelname=opt.outf, sample_id="0", epoch=epoch, count=flag_b1)
                         print("save figure")
-
-                        #worst hisgram
+                        #used gradient histogram
                         wh_l, wh_r = worst_histgram_l, worst_histgram_r
-                        plot_sorted_loss_histogram(worst_histgram_l, top_k=36, prefix="zl", modelname=opt.outf, sample_id="0", epoch=epoch)
-                        plot_sorted_loss_histogram(worst_histgram_r, top_k=36, prefix="zr", modelname=opt.outf, sample_id="0", epoch=epoch)
-                        
-                    
+                        plot_sorted_loss_histogram(worst_histgram_l, top_k=worst_num, prefix="zl", modelname=opt.outf, sample_id="0", epoch=epoch, count=flag_b1)
+                        plot_sorted_loss_histogram(worst_histgram_r, top_k=worst_num, prefix="zr", modelname=opt.outf, sample_id="0", epoch=epoch, count=flag_b1)
+                        flag_b1 += 1
+
+                    # 特定のサンプルのLossを監視 
                     if "bottle_0002" == filename[b]:
                         idx = filename.index("bottle_0002")
                         zl2, zr2 = zl[idx], zr[idx]
@@ -301,65 +277,63 @@ if __name__=="__main__":
                         minidx_l, minidx_r = idx_l_min_loss, idx_r_min_loss
                         all_loss_l, all_loss_r = all_indices_l, all_indices_r
                         mean_l, mean_r = loss_mean_l, loss_mean_r
-                        visualize_pca_dual_mean(zl2, idx_l, minidx_l, prefix="zl", modelname=opt.outf, sample_id="1", assigned_indices=all_loss_l, epoch=epoch)
-                        visualize_pca_dual_mean(zr2, idx_r, minidx_r, prefix="zr", modelname=opt.outf, sample_id="1", assigned_indices=all_loss_r, epoch=epoch)
-                        plot_loss_histogram(mean_l, idx_l, prefix="zl", modelname=opt.outf, sample_id="1", epoch=epoch)
-                        plot_loss_histogram(mean_r, idx_r, prefix="zr", modelname=opt.outf, sample_id="1", epoch=epoch)
+                        visualize_pca_dual_mean(zl2, idx_l, minidx_l, prefix="zl", modelname=opt.outf, sample_id="1", assigned_indices=all_loss_l, epoch=epoch, count=flag_b2)
+                        visualize_pca_dual_mean(zr2, idx_r, minidx_r, prefix="zr", modelname=opt.outf, sample_id="1", assigned_indices=all_loss_r, epoch=epoch, count=flag_b2)
+                        plot_loss_histogram(mean_l, idx_l, prefix="zl", modelname=opt.outf, sample_id="1", epoch=epoch, count=flag_b2)
+                        plot_loss_histogram(mean_r, idx_r, prefix="zr", modelname=opt.outf, sample_id="1", epoch=epoch, count=flag_b2)
                         print("save figure")
-
-                        #worst hisgram
+                        #used gradient histogram
                         wh_l, wh_r = worst_histgram_l, worst_histgram_r
-                        plot_sorted_loss_histogram(worst_histgram_l, top_k=36, prefix="", modelname="", sample_id="", epoch=epoch)
-                        plot_sorted_loss_histogram(worst_histgram_r, top_k=36, prefix="", modelname="", sample_id="", epoch=epoch)
+                        plot_sorted_loss_histogram(worst_histgram_l, top_k=worst_num, prefix="", modelname=opt.outf, sample_id="", epoch=epoch, count=flag_b2)
+                        plot_sorted_loss_histogram(worst_histgram_r, top_k=worst_num, prefix="", modelname=opt.outf, sample_id="", epoch=epoch, count=flag_b2)
+                        flag_b2 += 1
                         
-                
-                else: 
-                    pred_l , pred_r = pred_l[:, :30], pred_r[:, :30]
-                    loss_mse_l = F.mse_loss(pred_l, t_l.unsqueeze(1).repeat(1, 30, 1, 1), reduction="sum") /30
-                    loss_mse_r = F.mse_loss(pred_r, t_r.unsqueeze(1).repeat(1, 30, 1, 1), reduction="sum") /30
-                    # 1サンプルごとのMSE誤差(69dの和)
+                else: #その他クラスは通常のMSE Loss 
+                    pred_l , pred_r = pred_l[:, :num_sample_per_seat], pred_r[:, :num_sample_per_seat]
+                    loss_mse_l = F.mse_loss(pred_l, t_l.unsqueeze(1).repeat(1, num_sample_per_seat, 1, 1), reduction="sum") / num_sample_per_seat
+                    loss_mse_r = F.mse_loss(pred_r, t_r.unsqueeze(1).repeat(1, num_sample_per_seat, 1, 1), reduction="sum") / num_sample_per_seat
                     loss_mse_l_else += loss_mse_l 
                     loss_mse_r_else += loss_mse_r 
-                #xyzそれぞれどれだけ異なるか
-                #教師1個あたり
-                print(loss_mse_l / 69, loss_mse_r / 69, filename[b])
-                
-            loss_mse_l_b = (loss_mse_l_bottle + loss_mse_l_else) / batchsize #ボトルのみ
-            loss_mse_r_b = (loss_mse_r_bottle + loss_mse_r_else) / batchsize #その他　8クラス
 
+                #教師1個(69d)の次元あたりのLoss
+                print(loss_mse_l / 69, loss_mse_r / 69, filename[b])
+            
+            loss_mse_l_b = (loss_mse_l_bottle + loss_mse_l_else) / batchsize 
+            loss_mse_r_b = (loss_mse_r_bottle + loss_mse_r_else) / batchsize 
             loss = loss_mse_l_b + loss_mse_r_b + (kld_l + kld_r) 
             loss.backward()
 
-            # 保存フォルダの作成
+            #--- 教師ごとの勾配ノルムを可視化 ---
             os.makedirs(f"grad_histgram/{opt.outf}/bottle", exist_ok=True)
             os.makedirs(f"grad_histgram/{opt.outf}/mug", exist_ok=True)
             os.makedirs(f"grad_histgram/{opt.outf}/pc", exist_ok=True)
+
             # ---- bottle ----
             if "bottle_0001" in filename:
                 idx = filename.index("bottle_0001")
                 grad_l_all = pred_ges_l_list.grad[idx]  # 左手
                 grad_r_all = pred_ges_r_list.grad[idx]  # 右手
-                visualize_grad_bottle(grad_l_all, grad_r_all, b1_l, b1_r, outf=opt.outf, epoch=epoch)
+                visualize_grad_bottle(grad_l_all, grad_r_all, b1_l, b1_r, modelname=opt.outf, epoch=epoch)
                 
             # ---- mug ----
             if "mug0000" in filename:
                 idx = filename.index("mug0000")
                 grad_l_all = pred_ges_l_list.grad[idx]  # shape (N=120,23,3)
                 grad_r_all = pred_ges_r_list.grad[idx]
-                visualize_grad_else(grad_l_all, grad_r_all, class_name="mug", outf=opt.outf, epoch=epoch)
+                visualize_grad_else(grad_l_all, grad_r_all, class_name="mug", modelname=opt.outf, epoch=epoch)
 
             # ---- pc ----
             if "pc0000" in filename:
                 idx = filename.index("pc0000")
                 grad_l_all = pred_ges_l_list.grad[idx]  # shape (N=120,23,3)
                 grad_r_all = pred_ges_r_list.grad[idx]
-                visualize_grad_else(grad_l_all, grad_r_all, class_name="pc", outf=opt.outf, epoch=epoch)
+                visualize_grad_else(grad_l_all, grad_r_all, class_name="pc", modelname=opt.outf, epoch=epoch)
 
             optimizer.step()
-
             print('[%d: %d/%d] total-train loss: %f' % (epoch, i, num_batch, loss.item()))
             print('[%d: %d/%d] mse_l loss: %f, mse_r loss: %f' % (epoch, i, num_batch, loss_mse_l_b.item(), loss_mse_r_b.item()))
             print('[%d: %d/%d] kld_l: %f, kld_r: %f ' % (epoch, i, num_batch, kld_l.item(), kld_r.item()))
+            
             Writer.add_scalars("tensorboad/loss_kld_l",{"train":kld_l.item()},epoch)
             Writer.add_scalars("tensorboad/loss_kld_r",{"train":kld_r.item()},epoch)
             Writer.add_scalars("tensorboad/loss_mse_l",{"train":loss_mse_l_b.item()},epoch)
@@ -369,21 +343,19 @@ if __name__=="__main__":
 
             if loss < min_loss_total:
                 print("min_loss_totalgを更新")
-                torch.save(sita_generater_l.state_dict(), '%s/sita_generater_l_loss_total_best.pth' % (opt.outf))
-                torch.save(sita_generater_r.state_dict(), '%s/sita_generater_r_loss_total_best.pth' % (opt.outf))
+                torch.save(position_generater_l.state_dict(), '%s/position_generater_l_loss_total_best.pth' % (opt.outf))
+                torch.save(position_generater_r.state_dict(), '%s/position_generater_r_loss_total_best.pth' % (opt.outf))
                 torch.save(optimizer.state_dict(), '%s/optimizer_loss_total_best.pth' % (opt.outf))
                 min_loss_total = loss
 
             if loss_mse_l_b < min_total_mse_l:
                 print("min_loss_mse_l更新")
-                torch.save(sita_generater_l.state_dict(), '%s/sita_generater_l_loss_mse_best.pth' % (opt.outf))
-                #torch.save(wrist_generater_l.state_dict(), '%s/wrist_generater_l_%s_loss_total_best.pth' % (opt.outf, opt.class_choice))
+                torch.save(position_generater_l.state_dict(), '%s/position_generater_l_loss_mse_best.pth' % (opt.outf))
                 min_total_mse_l = loss_mse_l_b
             
             if loss_mse_r_b < min_total_mse_r:
                 print("min_loss_mse_r更新")
-                torch.save(sita_generater_r.state_dict(), '%s/sita_generater_r_loss_mse_best.pth' % (opt.outf))
-                #torch.save(wrist_generater_r.state_dict(), '%s/wrist_generater_r_%s_loss_total_best.pth' % (opt.outf, opt.class_choice))
+                torch.save(position_generater_r.state_dict(), '%s/position_generater_r_loss_mse_best.pth' % (opt.outf))
                 min_total_mse_r = loss_mse_r_b
     
         #evalで検証する
@@ -391,77 +363,60 @@ if __name__=="__main__":
         #epochごとにPCA plot
         all_sample_pca(all_sample_zl, all_indices_zl, outf=opt.outf, filename="zl", epoch = epoch)
         all_sample_pca(all_sample_zr, all_indices_zr, outf=opt.outf, filename="zr", epoch = epoch)
-
         debug_all_zl, debug_all_zr = [], []
         debug_indices = []
-        sita_generater_l, sita_generater_r = sita_generater_l.eval(),  sita_generater_r.eval()
+        position_generater_l, position_generater_r = position_generater_l.eval(),  position_generater_r.eval()
+        
         for data in debug_dataloader:
             points, target, hand_target, filename, batch_weight, hand_set, hand_scale, hand_format, sita_ans, wrist_target = data
             batchsize = points.size(0)
-            "pl, pr, all_feat, plout, prout = get_patseg(pointnet, points, target)"
-            _, _, all_feat, _, _ = get_patseg(pointnet, points, target)
-            pl, pr, _, plout, prout = get_patseg_target(pointnet, points, target)
-            #パーツの特徴ベクトル取得
+            #_, _, all_feat, _, _ = get_patseg(pointnet, points, target)
+            pl, pr, all_feat, plout, prout = get_patseg_target(pointnet, points, target)
+            #手形状生成プロセス
             pf_l, mu_l, logvar_l = parts_encoder_l(pl, all_feat)
             pf_r, mu_r, logvar_r = parts_encoder_r(pr, all_feat)  
-            #基準の手を生成
             pred_handl = handvae_l.finetune(pf_l)
             pred_handr = handvae_r.finetune(pf_r)
             wrist_format = torch.tensor([0.5, 0.5, 0.5]).cuda()
             wrist = torch.tensor([0.0, 0.0, 0.0]).cuda().repeat(batchsize, 1, 1)
+
             #手首座標を0,0,0に変換
             pred_handl, pred_handr = pred_handl.view(batchsize, -1, 3) - wrist_format , pred_handr.view(batchsize, -1, 3) - wrist_format
-
             pred_ges_l, pred_ges_r = torch.cat([wrist, pred_handl], dim=1), torch.cat([wrist, pred_handr], dim=1)
-            pred_ges_l_list = torch.tensor([]).cuda() # sampling * 23 * 3
+            pred_ges_l_list = torch.tensor([]).cuda() # samplingN * 23 * 3
             pred_ges_r_list = torch.tensor([]).cuda()
-            #教師手首
+            #教師手形状(物体座標系)
             wrist_l_t, wrist_r_t = np.split(wrist_target, 2, axis=1)
             wrist_l_t, wrist_r_t =  wrist_l_t.view(-1, 3).cuda(), wrist_r_t.view(-1, 3).cuda()
             target_hand_l, target_hand_r = np.split(hand_target, 2, axis=1)
             target_hand_l, target_hand_r = target_hand_l.cuda(), target_hand_r.cuda()
             
-            #同じ入力でN回生成する。
             kld_l, kld_r = 0, 0
             hscale_l, hscale_r = np.split(hand_scale, 2, axis=1)
             hscale_l, hscale_r = hscale_l.cuda(), hscale_r.cuda()
-
-            #wrist NN (train) 回転行列と手首座標生成
-
-            R_l, wrist_l, kld_Rl, zl = sita_generater_l(plout, all_feat, N=1)
-            R_r, wrist_r, kld_Rr, zr = sita_generater_r(prout, all_feat, N=1)
-            
-            #すべてのサンプルのPCAのために配列に格納
-            #debug_all_zl.append(zl[:,:,:2].reshape(batchsize * 2, -1)) 
+            #潜在変数zを格納
+            R_l, wrist_l, kld_Rl, zl = position_generater_l(plout, all_feat, N=1)
+            R_r, wrist_r, kld_Rr, zr = position_generater_r(prout, all_feat, N=1)
             debug_all_zl.append(zl[:,0,:].reshape(batchsize, -1))
             debug_all_zr.append(zr[:,0,:].reshape(batchsize, -1))
-            #debug_all_zr.append(zr[:,:,:2].reshape(batchsize , -1))
-
             for b in range(batchsize):
                 indices = indices_dict[filename[b][:2]]
                 debug_indices.append(indices)
 
-        all_sample_pca(debug_all_zl, debug_indices, outf=opt.outf, filename="debugzl", epoch = epoch)
-        all_sample_pca(debug_all_zr, debug_indices, outf=opt.outf, filename="debugzr", epoch = epoch)
+        #可視化
+        all_sample_pca(debug_all_zl, debug_indices, modelname=opt.outf, filename="debugzl", epoch = epoch)
+        all_sample_pca(debug_all_zr, debug_indices, modelname=opt.outf, filename="debugzr", epoch = epoch)
         
-        os.makedirs('%s/sita_generater_l/Epoch' % (opt.outf), exist_ok=True)
-        os.makedirs('%s/sita_generater_r/Epoch' % (opt.outf), exist_ok=True)
+        os.makedirs('%s/position_generater_l/Epoch' % (opt.outf), exist_ok=True)
+        os.makedirs('%s/position_generater_r/Epoch' % (opt.outf), exist_ok=True)
         os.makedirs('%s/optimizer/Epoch' % (opt.outf), exist_ok=True)
         os.makedirs('%s/scheduler/Epoch' % (opt.outf), exist_ok=True)
 
-        if (epoch+1) % 4 == 0: #5epochずつ保存
-            torch.save(sita_generater_l.state_dict(), '%s/sita_generater_l/Epoch/%s_epoch.pth' % (opt.outf, epoch))
-            torch.save(sita_generater_r.state_dict(), '%s/sita_generater_r/Epoch/%s_epoch.pth' % (opt.outf, epoch))
+        if (epoch+1) % 10 == 0: #10エポック毎に保存
+            torch.save(position_generater_l.state_dict(), '%s/position_generater_l/Epoch/%s_epoch.pth' % (opt.outf, epoch))
+            torch.save(position_generater_r.state_dict(), '%s/position_generater_r/Epoch/%s_epoch.pth' % (opt.outf, epoch))
             torch.save(optimizer.state_dict(), '%s/optimizer/Epoch/%s_epoch.pth' % (opt.outf, epoch))
             torch.save(scheduler.state_dict(), '%s/scheduler/Epoch/%s_epoch.pth' % (opt.outf, epoch))
         scheduler.step()
 
     Writer.close()
-
-    print("----------")
-    print("学習終了")
-
-   
-    
-
-   

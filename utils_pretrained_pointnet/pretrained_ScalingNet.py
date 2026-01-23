@@ -36,7 +36,7 @@ if __name__=="__main__":
     parser.add_argument('--nepoch', type=int, default=100, help='number of epochs to train for')
     parser.add_argument('--outf', type=str, default='ScalingNet', help='output folder')
     parser.add_argument('--model', type=str, default='', help='model path')
-    parser.add_argument('--dataset', type=str, default="neuralnet_dataset_unity", help="dataset path")
+    parser.add_argument('--dataset', type=str, default="dataset", help="dataset path")
     parser.add_argument('--feature_transform', action='store_true', help="use feature transform")
     opt = parser.parse_args()
     print(opt)

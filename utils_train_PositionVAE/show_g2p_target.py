@@ -87,8 +87,8 @@ def demo(data):
         pred_r = pred_ges_r # 1 * N * 23 * 3
         
         t_l, t_r =  targetl.unsqueeze(0), targetr.unsqueeze(0)
-        target_list_l = rotate_targets_z(t_l.view(1,23,3), N = 12) # 1 * 23 * 3
-        target_list_r = rotate_targets_z(t_r.view(1,23,3), N = 12)
+        target_list_l = augmentation_target(t_l.view(1,23,3), N = 12) # 1 * 23 * 3
+        target_list_r = augmentation_target(t_r.view(1,23,3), N = 12)
 
         msel = F.mse_loss(pred_l.repeat(1,12,1,1), target_list_l, reduction="none")
         mser = F.mse_loss(pred_r.repeat(1,12,1,1), target_list_r, reduction="none")
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='save_model', help='model path')
     parser.add_argument('--idx', type=int, default=1, help='model index')
-    parser.add_argument('--dataset', type=str, default='neuralnet_dataset_unity', help='dataset path') #neuralnet_dataset_unity, dataset2
+    parser.add_argument('--dataset', type=str, default='dataset', help='dataset path') #dataset, dataset2
     parser.add_argument('--select_labels', type=list, default=["ka"], help="what class use in dataset") #["ju", "mu", "bo", "pc"]
     opt = parser.parse_args()
     print(opt)

@@ -175,7 +175,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--batchSize", type=int, default=1, help="input batch size")
     parser.add_argument("--workers", type=int, default=0, help="number of data loading workers")
-    parser.add_argument("--dataset", type=str, default="neuralnet_dataset_unity", help="dataset path")
+    parser.add_argument("--dataset", type=str, default="dataset", help="dataset path")
     parser.add_argument("--select_labels", type=list, default=["ba", "bo", "ju", "ka", "mu", "pa", "pc", "po", "va"], help="class codes to include (e.g. ju mu bo pc)")
     parser.add_argument("--outf", type=str, default="PCA_selected", help="output folder for PCA plots")
     opt = parser.parse_args()
