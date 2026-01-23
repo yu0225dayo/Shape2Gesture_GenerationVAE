@@ -60,6 +60,7 @@ results/
 logs/
 save_log/
 save_model/
+Log_tensorboard/
 
 # Temporary files
 *.tmp

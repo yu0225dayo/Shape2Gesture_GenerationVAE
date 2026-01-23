@@ -34,8 +34,6 @@ if __name__=="__main__":
     parser.add_argument('--batchSize', type=int, default=16, help='input batch size')
     parser.add_argument('--workers', type=int, help='number of data loading workers', default=0)
     parser.add_argument('--nepoch', type=int, default=100, help='number of epochs to train for')
-    parser.add_argument('--sampling', type=int, default=5, help='number of sampling to train for')
-
     parser.add_argument('--outf', type=str, default='ScalingNet', help='output folder')
     parser.add_argument('--model', type=str, default='', help='model path')
     parser.add_argument('--dataset', type=str, default="neuralnet_dataset_unity", help="dataset path")
