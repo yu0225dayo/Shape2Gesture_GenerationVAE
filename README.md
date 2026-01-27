@@ -187,12 +187,3 @@ python show_g2p_target.py \
 - CUDA 11.3, 11.8, 12.1で確認済み
 - NumPy, Matplotlib, OpenCV, Pandas, tqdm
 
-## インストール
-
-```bash
-git clone https://github.com/yu0225dayo/Shape2Gesture_SearchModel
-cd Shape2Gesture_SearchModel
-
-conda env create -f enviroment.yml
-conda activate py39_pytorch
-```
