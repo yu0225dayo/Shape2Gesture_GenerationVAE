@@ -1,4 +1,4 @@
-# Shape2Gesture_GenerationModel
+# Shape2Gesture_GenerationVAE
 
 接触部位形状を介した、両手把持姿勢の生成モデル
 
